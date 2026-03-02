@@ -86,7 +86,6 @@ fun GamesListScreen(
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = padding,
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         item {

@@ -1,59 +1,90 @@
 package com.indigo.app.player
 
+import android.content.ComponentName
 import android.content.Context
-import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 
 /**
  * Manages audio playback for commentary streams.
- * Wraps ExoPlayer with sync offset support.
+ * Connects to PlaybackService via MediaController so audio
+ * survives app backgrounding.
  */
-class AudioPlayerManager(context: Context) {
+class AudioPlayerManager(private val context: Context) {
 
-    private val player: ExoPlayer = ExoPlayer.Builder(context).build()
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var controller: MediaController? = null
 
     private var currentUrl: String? = null
-    private var syncOffsetMs: Long = 0L
+    private var pendingAction: (() -> Unit)? = null
+    private var lastSyncOffsetMs: Long = 0L
+
+    init {
+        val sessionToken = SessionToken(
+            context,
+            ComponentName(context, PlaybackService::class.java)
+        )
+        controllerFuture = MediaController.Builder(context, sessionToken).buildAsync().also { future ->
+            future.addListener({
+                controller = future.get()
+                pendingAction?.invoke()
+                pendingAction = null
+            }, MoreExecutors.directExecutor())
+        }
+    }
+
+    private fun withController(action: (MediaController) -> Unit) {
+        val ctrl = controller
+        if (ctrl != null) {
+            action(ctrl)
+        } else {
+            pendingAction = { controller?.let(action) }
+        }
+    }
 
     fun play(streamUrl: String) {
-        if (streamUrl != currentUrl) {
-            currentUrl = streamUrl
-            val mediaItem = MediaItem.fromUri(streamUrl)
-            player.setMediaItem(mediaItem)
-            player.prepare()
+        withController { ctrl ->
+            if (streamUrl != currentUrl) {
+                currentUrl = streamUrl
+                ctrl.setMediaItem(MediaItem.fromUri(streamUrl))
+                ctrl.prepare()
+            }
+            ctrl.play()
         }
-        player.play()
     }
 
     fun pause() {
-        player.pause()
+        withController { it.pause() }
     }
 
     fun stop() {
-        player.stop()
+        withController { it.stop() }
         currentUrl = null
     }
 
-    @OptIn(UnstableApi::class)
     fun setSyncOffset(offsetMs: Long) {
-        syncOffsetMs = offsetMs
-        // For live streams, we simulate offset by seeking relative to current position.
-        // In a more sophisticated implementation, this would use ExoPlayer's
-        // setPlaybackParameters or a custom render offset.
-        // For MVP, we apply a simple seek when offset changes.
-        if (player.isPlaying || player.playbackState == Player.STATE_READY) {
-            val target = player.currentPosition + (offsetMs - syncOffsetMs)
-            if (target >= 0) {
-                player.seekTo(target)
+        val delta = offsetMs - lastSyncOffsetMs
+        lastSyncOffsetMs = offsetMs
+        if (delta == 0L) return
+
+        withController { ctrl ->
+            if (ctrl.isPlaying || ctrl.playbackState == Player.STATE_READY) {
+                val target = ctrl.currentPosition + delta
+                if (target >= 0) {
+                    ctrl.seekTo(target)
+                }
             }
         }
     }
 
     fun release() {
-        player.release()
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controller = null
+        controllerFuture = null
+        currentUrl = null
     }
 }
