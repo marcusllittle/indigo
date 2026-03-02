@@ -30,5 +30,5 @@ data class PlaybackInfo(
     @SerialName("stream_url") val streamUrl: String,
     val format: String,
     @SerialName("is_live") val isLive: Boolean,
-    @SerialName("recommended_offset_ms") val recommendedOffsetMs: Int,
+    @SerialName("recommended_offset_ms") val recommendedOffsetMs: Int = 0,
 )

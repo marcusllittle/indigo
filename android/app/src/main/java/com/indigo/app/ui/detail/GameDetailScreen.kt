@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.indigo.app.player.AudioPlayerManager
+import com.indigo.app.player.PlaybackState
 import com.indigo.app.ui.components.LiveBadge
 import com.indigo.app.ui.theme.IndigoLive
 import com.indigo.app.ui.theme.IndigoSuccess
@@ -64,13 +65,28 @@ fun GameDetailScreen(
     val context = LocalContext.current
     val playerManager = remember { AudioPlayerManager(context) }
 
+    DisposableEffect(playerManager) {
+        val listener = object : AudioPlayerManager.Listener {
+            override fun onPlaybackStateChanged(state: PlaybackState) {
+                viewModel.onPlaybackStateChanged(state)
+            }
+
+            override fun onPlaybackError(message: String) {
+                viewModel.onPlaybackError(message)
+            }
+        }
+
+        playerManager.setListener(listener)
+        onDispose { playerManager.setListener(null) }
+    }
+
     // Manage player lifecycle based on UI state
-    DisposableEffect(uiState.commentaryEnabled, uiState.playbackInfo, uiState.isPlaying) {
+    DisposableEffect(uiState.commentaryEnabled, uiState.playbackInfo?.streamUrl, uiState.shouldBePlaying) {
         val playback = uiState.playbackInfo
         if (uiState.commentaryEnabled && playback != null) {
-            if (uiState.isPlaying) {
+            if (uiState.shouldBePlaying) {
                 playerManager.play(playback.streamUrl)
-            } else {
+            } else if (uiState.playbackState != PlaybackState.Error) {
                 playerManager.pause()
             }
         } else {
@@ -143,6 +159,15 @@ fun GameDetailScreen(
                     text = game.status,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            if (uiState.error != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = uiState.error ?: "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
 
@@ -236,9 +261,9 @@ fun GameDetailScreen(
                             onClick = { viewModel.togglePlayPause() },
                         ) {
                             Icon(
-                                imageVector = if (uiState.isPlaying) Icons.Default.Pause
+                                imageVector = if (uiState.shouldBePlaying) Icons.Default.Pause
                                 else Icons.Default.PlayArrow,
-                                contentDescription = if (uiState.isPlaying) "Pause" else "Play",
+                                contentDescription = if (uiState.shouldBePlaying) "Pause" else "Play",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
                                     .width(48.dp)
@@ -247,10 +272,31 @@ fun GameDetailScreen(
                         }
 
                         Text(
-                            text = if (uiState.isPlaying) "Playing" else "Paused",
+                            text = when (uiState.playbackState) {
+                                PlaybackState.Playing -> "Playing"
+                                PlaybackState.Paused -> "Paused"
+                                PlaybackState.Buffering -> "Buffering..."
+                                PlaybackState.Error -> "Playback error"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+
+                        if (uiState.playbackError != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = uiState.playbackError ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = {
+                                viewModel.retryPlayback()
+                                playerManager.retry()
+                            }) {
+                                Text("Retry")
+                            }
+                        }
                     }
                 }
 

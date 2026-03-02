@@ -25,4 +25,4 @@ class PlaybackInfo(BaseModel):
     stream_url: str
     format: str  # "hls" or "mp3"
     is_live: bool
-    recommended_offset_ms: int  # suggested sync offset, 0 = no suggestion
+    recommended_offset_ms: int = 0  # suggested sync offset, 0 = no suggestion

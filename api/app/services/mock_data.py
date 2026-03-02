@@ -1,4 +1,11 @@
-from app.models.schemas import Game, Channel, PlaybackInfo
+from app.config import (
+    STREAM_FORMAT,
+    STREAM_IS_LIVE,
+    STREAM_RECOMMENDED_OFFSET_MS,
+    STREAM_URL,
+    resolve_stream_url,
+)
+from app.models.schemas import Channel, Game, PlaybackInfo
 
 MOCK_GAMES: list[Game] = [
     Game(
@@ -74,18 +81,13 @@ MOCK_CHANNELS: list[Channel] = [
     ),
 ]
 
-# Public domain / freely available test audio streams
-# Using BBC World Service as a reliable live HLS stream for testing
-# In production these would be real commentary stream URLs
-TEST_STREAM_URL = "https://stream.live.vc.bbcmedia.co.uk/bbc_world_service"
-
 MOCK_PLAYBACK: dict[str, PlaybackInfo] = {
     ch.id: PlaybackInfo(
         channel_id=ch.id,
-        stream_url=TEST_STREAM_URL,
-        format="mp3",
-        is_live=True,
-        recommended_offset_ms=0,
+        stream_url=STREAM_URL,
+        format=STREAM_FORMAT,
+        is_live=STREAM_IS_LIVE,
+        recommended_offset_ms=STREAM_RECOMMENDED_OFFSET_MS,
     )
     for ch in MOCK_CHANNELS
 }
@@ -99,5 +101,9 @@ def get_channels_for_game(game_id: str) -> list[Channel]:
     return [c for c in MOCK_CHANNELS if c.game_id == game_id]
 
 
-def get_playback_info(channel_id: str) -> PlaybackInfo | None:
-    return MOCK_PLAYBACK.get(channel_id)
+def get_playback_info(channel_id: str, base_url: str | None = None) -> PlaybackInfo | None:
+    playback = MOCK_PLAYBACK.get(channel_id)
+    if playback is None:
+        return None
+
+    return playback.model_copy(update={"stream_url": resolve_stream_url(base_url)})
